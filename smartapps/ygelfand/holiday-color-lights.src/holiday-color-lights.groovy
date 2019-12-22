@@ -208,6 +208,9 @@ private timeWindowStop() {
     else if (ending && location.timeZone) {
         result = timeToday(ending, location.timeZone)
     }
+    if (result < timeWindowStart()) {
+        result = result + 1
+    }
     log.trace "timeWindowStop = ${result}"
     result
 }
@@ -260,20 +263,49 @@ def updated() {
 }
 
 def initialize() {
-	def hours = settings.cycletime.toInteger().intdiv(60)
-    def minutes = settings.cycletime.toInteger() % 60
-    def hourmark
-    if(hours > 0)
-    	hourmark = "${hours}"
-    else
-    	hourmark = "*"
-	schedule("0 0/${minutes} ${hourmark} 1/1 * ? *",changeHandler)
     state.colorOffset=0
+    if (state.running == true) {
+        log.debug "Resuming change handler in ${settings.cycletime} minutes"
+        runIn(settings.cycletime.toInteger() * 60, changeHandler)
+    } else {
+        def start = timeWindowStart()
+        log.debug "Scheduling lights on at: ${start}"
+        runOnce(start, lightsOn)
+    }
+}
+
+def lightsOn(evt) {
+    log.debug "lightsOn"
+    state.running = true
+    lights*.on()
+    runIn(settings.cycletime.toInteger() * 60, changeHandler)
+    log.debug "Running change handler in ${settings.cycletime} minutes"
+    def stop = timeWindowStop()
+    log.info "Scheduling lights off at: ${stop}"
+    runOnce(stop, lightsOff)
+    changeHandler()
+}
+
+def lightsOff(evt) {
+    log.debug "lightsOff"
+    state.running = false
+    lights*.off()
+    unschedule(changeHandler)
+    def start = timeWindowStart()
+    if (start < new Date()) {
+        start = start + 1
+    }
+    log.info "Scheduling lights on at: ${start}"
+    runOnce(start, lightsOn)
 }
 
 def changeHandler(evt) {
-	if(!globalEnable || !getTimeOk() || !getDaysOk() || !getModeOk() || !getSwitchOk() ) 
-		return true
+    log.debug "changeHandler"
+    if (!globalEnable || !getDaysOk() || !getModeOk() || !getTimeOk()) {
+        log.debug "Not scheduled to run yet"
+        lightsOff()
+        return true
+    }
     if (lights)
     {
     	def colors = []
@@ -302,7 +334,7 @@ def changeHandler(evt) {
 		def onLights = lights.findAll { light -> light.currentSwitch == "on"}
         def numberon = onLights.size();
         def numcolors = colors.size();
-        //log.debug "Offset: ${state.colorOffset}"
+        log.debug "Offset: ${state.colorOffset}"
     	if (onLights.size() > 0) {
         	if (state.colorOffset >= numcolors ) {
             	state.colorOffset = 0
@@ -318,11 +350,12 @@ def changeHandler(evt) {
             state.colorOffset = state.colorOffset + 1
      	}
    	}
+    runIn(settings.cycletime.toInteger() * 60, changeHandler)
+    log.debug "Running change handler again in ${settings.cycletime} minutes"
 }
 
 def sendcolor(lights,color)
 {
-log.debug "In send color"
 	if (brightnessLevel<1) {
 		brightnessLevel=1
 	}
