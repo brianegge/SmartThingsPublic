@@ -727,7 +727,7 @@ def syncSuccess() {
     log ("sync", "Sync Success...${mytime} seconds", 0)
     message("Sync Success")
     unschedule(syncFailed)
-    return createEvent(name: "sync", value: "idle")
+    return [createEvent(name: "sync", value: "idle") + createEvent(name: "status", value: "success")]
 }
 
 def syncFailed() {
@@ -863,7 +863,7 @@ def callTasmota(action, receivedvalue){
 //Any successful call made to the device will have a return value which come back to the parse function.
 //The parse function either routes the received JSON information to parsedevice or parsemqtt for further processing.
 def parse(response) {
-    log ("parse", "Entering - response: ${response}", 1)
+    log ("parse", "Entering - response: ${response}", 2)
 	def msg = parseLanMessage(response)
     
     log ("parse", "Response received", 0)
@@ -889,7 +889,7 @@ def parse(response) {
 def parsedevice(response){
 	def msg = parseLanMessage(response)
     //Update the status to show we have received a response
-	def events = [createEvent(name:"status", value: "receive")]
+	def events = [createEvent(name:"status", value: "success")]
 	
     //Get the command and value that was submitted to the callTasmota function
     def lastcommand = device.currentValue("command")
@@ -965,7 +965,7 @@ def parsedevice(response){
             	log("parsedevice","ColorTemperature (CT): ${tasct} mireds - ColorTemperature (CT): ${kelvin} Kelvin", 1)
                 if (lastcommandvalue.toInteger() == tasct.toInteger()){
                 	log ("parsedevice","Color temp applied successfully", 0)
-                    events += createEvent(name: "switch", value: "on", displayed:true)
+                    events += createEvent(name: "switch", value: taspower.toLowerCase())
                     events += createEvent(name: "colorTempValue", value: kelvin, displayed:true)
                     events += createEvent(name: "colorTemperatureControl", value: kelvin, displayed:false)
                     events += createEvent(name: "commandflag", value: "Complete", displayed:false)
@@ -1014,7 +1014,7 @@ def parsedevice(response){
             case ["STATE"]:
                 //Synchronise the UI to the values we get from the device
                 log ("parsedevice","Setting device handler values", 1)
-                events += createEvent(name: "switch", value: taspower, displayed:false)
+                events += createEvent(name: "switch", value: taspower.toLowerCase())
                 events += createEvent(name: "color", value: tascolor, displayed:false)
                 events += createEvent(name: "level", value: tasdimmer, displayed:false)
                 events += createEvent(name: "fade", value: tasfade, displayed:false)
@@ -1382,7 +1382,6 @@ private setWifi(signal){
                 event = createEvent(name:"wifi", value: "None")
                 break;
        }
-    log ("Wifi","Exiting", 2)
     return event
 }
 
