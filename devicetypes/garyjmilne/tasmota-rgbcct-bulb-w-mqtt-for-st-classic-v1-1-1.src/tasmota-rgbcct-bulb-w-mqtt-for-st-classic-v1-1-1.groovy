@@ -1183,7 +1183,7 @@ def setColor(value) {
     	//It must be an HSL color
         log ("setColor", "Requested HSL - H:${valuehue} S:${valuesat}", 1)
         
-        String hexcolor = colorUtil.hsvToHex(Math.round(valuehue), Math.round(valuesat))
+        String hexcolor = colorUtil.hsvToHex((int)valuehue, (int)valuesat)
         desiredColor = hexcolor
         //This is going to appear to Tasmota as a color change and Tasmota will respond with setting the dimmer at 100.
         //This change will be reflected automatically in the SmartThings app but may not be picked up by other integration platforms if that was the source of the color selection.
