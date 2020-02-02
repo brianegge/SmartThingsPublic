@@ -70,6 +70,7 @@ def configurationPage() {
 		section("Light Settings") {
             input "lights", "capability.colorControl", title: "Which Color Changing Bulbs?", multiple:true, required: true
         	input "brightnessLevel", "number", title: "Brightness Level (1-100)?", required:false, defaultValue:100, range: '1..100'
+        	input "noHolidayBrightnessLevel", "number", title: "No Holiday Brightness Level (1-100)?", required:false, defaultValue:50, range: '1..100'
 		}
 		section("Holidays Settings") {
 			input "holidays", "enum", title: "Holidays?", required: true, multiple: true, options: holidayNames(), defaultValue: holidayNames()
@@ -177,7 +178,9 @@ private getTimeOk() {
     if (start && stop && location.timeZone) {
         result = timeOfDayIsBetween(start, stop, new Date(), location.timeZone)
     }
-    log.trace "timeOk = $result"
+    def now = new Date()
+    log.debug "timeOk is $result because $start < $now < $stop"
+    sendNotificationEvent("timeOk = $start, $stop, $result")
     result
 }
 private getDaysOk() {
@@ -198,18 +201,25 @@ private timeWindowStop() {
         if (result && endTimeOffset) {
             result = new Date(result.time + Math.round(endTimeOffset * 60000))
         }
+       if (result < new Date()) {
+           result = result + 1
+       }
     }
     else if (endTimeType == "sunset") {
         result = location.currentState("sunsetTime")?.dateValue
         if (result && endTimeOffset) {
             result = new Date(result.time + Math.round(endTimeOffset * 60000))
         }
+       if (result < new Date()) {
+           result = result + 1
+       }
     }
     else if (ending && location.timeZone) {
-        result = timeToday(ending, location.timeZone)
-    }
-    if (result < timeWindowStart()) {
-        result = result + 1
+       def start = timeWindowStart()
+       if (start > new Date()) {
+           start = new Date()
+       }
+       result = timeTodayAfter(timeWindowStart(), ending, location.timeZone)
     }
     log.trace "timeWindowStop = ${result}"
     result
@@ -264,26 +274,73 @@ def updated() {
 
 def initialize() {
     state.colorOffset=0
-    if (state.running == true) {
-        log.debug "Resuming change handler in ${settings.cycletime} minutes"
-        runIn(settings.cycletime.toInteger() * 60, changeHandler)
+    state.curHoliday = null
+    if (brightnessLevel<1) {
+		brightnessLevel=1
+	}
+    else if (brightnessLevel>100) {
+		brightnessLevel=100
+	}
+    if (noHolidayBrightnessLevel<0) {
+		noHolidayBrightnessLevel=0
+	}
+    else if (noHolidayBrightnessLevel>100) {
+		noHolidayBrightnessLevel=100
+	}
+    setHoliday()
+    if (globalEnable && getDaysOk() && getModeOk() && getTimeOk()) {
+        log.debug "Resuming light show"
+        lightsOn()
     } else {
-        def start = timeWindowStart()
-        log.debug "Scheduling lights on at: ${start}"
-        runOnce(start, lightsOn)
+		scheduleOn()
     }
+    subscribe(location, "mode", modeChange)
+}
+
+def setHoliday() {
+    def lastHoliday = state.curHoliday
+    if(forceholiday) {
+        state.curHoliday = forceholiday
+    }
+    else
+    {
+    	switch(holidayalgo) {
+            case 'closest':
+            	state.curHoliday = closest()
+            	break;
+            case 'closestwgo':
+            	state.curHoliday = closestWithoutGO(lingerdays)
+            	break;
+ 			}
+    }
+    log.debug "Determined current holiday is ${state.curHoliday}"    
+}
+
+def scheduleOn() {
+    def start = timeWindowStart()
+    if (start < new Date()) {
+        start = start + 1
+    }
+    log.debug "Scheduling lights on at: ${start}"
+    runOnce(start, lightsOn)
 }
 
 def lightsOn(evt) {
     log.debug "lightsOn"
+    setHoliday()
+    sendNotificationEvent("Turning holiday lights on for holiday ${state.curHoliday}")
     state.running = true
+    log.debug "Turning all lights on"
     lights*.on()
-    runIn(settings.cycletime.toInteger() * 60, changeHandler)
-    log.debug "Running change handler in ${settings.cycletime} minutes"
-    def stop = timeWindowStop()
-    log.info "Scheduling lights off at: ${stop}"
+    scheduleOff()
+    log.debug "Scheduling change handler now"
+    runIn(0, changeHandler)
+}
+
+def scheduleOff() {
+	def stop = timeWindowStop()
+    log.debug "Scheduling lights off at: ${stop}"
     runOnce(stop, lightsOff)
-    changeHandler()
 }
 
 def lightsOff(evt) {
@@ -291,50 +348,53 @@ def lightsOff(evt) {
     state.running = false
     lights*.off()
     unschedule(changeHandler)
-    def start = timeWindowStart()
-    if (start < new Date()) {
-        start = start + 1
+    scheduleOn()
+}
+def modeChange(evt) {
+    if (!globalEnable || !getDaysOk() || !getModeOk() || !getTimeOk()) {
+        log.debug "mode changed to ${evt.value}, turning lights off"
+        lightsOff()
+    } else { 
+        log.debug "mode changed to ${evt.value}, turning lights on"
+        lightsOn()
     }
-    log.info "Scheduling lights on at: ${start}"
-    runOnce(start, lightsOn)
+}
+
+def shouldLightsBeOn() {
+  def globalOk = globalEnable
+  def daysOk = getDaysOk()
+  def modeOk = getModeOk()
+  def timeOk = getTimeOk()
+  log.debug "shouldLightsBeOn global:${globalEnable} daysOk:${daysOk} modeOk:${modeOk} timeOk:${timeOk}"
+  return globalOk && daysOk && modeOk && timeOk;
 }
 
 def changeHandler(evt) {
-    log.debug "changeHandler"
-    if (!globalEnable || !getDaysOk() || !getModeOk() || !getTimeOk()) {
-        log.debug "Not scheduled to run yet"
-        lightsOff()
-        return true
-    }
+    log.debug "start changeHandler"
+    //if (!shouldLightsBeOn()) {
+    //    log.debug "Not scheduled to run yet"
+    //    lightsOff()
+    //    return true
+    //}
     if (lights)
     {
     	def colors = []
-        def curHoliday
-        if(forceholiday) {
-        	curHoliday = forceholiday
-        }
-        else 
-        {
-    		switch(holidayalgo) {
-     	   		case 'closest':
-                	curHoliday = closest()
-            		break;
-            	case 'closestwgo':
-                	curHoliday = closestWithoutGO(lingerdays)
-            		break;
- 			}
-        }
-        log.debug curHoliday
-        if (!curHoliday) {
+
+        def brightness = brightnessLevel
+        if (!state.curHoliday) {
         	log.debug "No holiday around, using default color"
-            colors = ['White']
+            colors = ['Warm White']
+            brightness = noHolidayBrightnessLevel
         } else {
-            colors = allHolidayList().find {it.name == curHoliday }.colors
+            colors = allHolidayList().find {it.name == state.curHoliday }.colors
         }
-		def onLights = lights.findAll { light -> light.currentSwitch == "on"}
+		def onLights = lights.findAll { light -> light.currentSwitch.equalsIgnoreCase("on")}
+        for(def light : lights) {
+          log.debug "${light}: currentSwitch=${light.currentSwitch}, currentValue=${light.currentValue}, currentState=${light.currentState}"
+        }
         def numberon = onLights.size();
         def numcolors = colors.size();
-        log.debug "Offset: ${state.colorOffset}"
+        log.debug "Offset: ${state.colorOffset}, numberon: ${numberon}, numcolors=${numcolors}, holiday=${state.curHoliday}"
     	if (onLights.size() > 0) {
         	if (state.colorOffset >= numcolors ) {
             	state.colorOffset = 0
@@ -344,7 +404,7 @@ def changeHandler(evt) {
             else {
             	log.debug "Colors: ${colors}"
            		for(def i=0;i<numberon;i++) {
-                	sendcolor(onLights[i],colors[(state.colorOffset + i) % numcolors])
+                	sendcolor(onLights[i],colors[(state.colorOffset + i) % numcolors],brightness)
                 }
             }
             state.colorOffset = state.colorOffset + 1
@@ -354,15 +414,8 @@ def changeHandler(evt) {
     log.debug "Running change handler again in ${settings.cycletime} minutes"
 }
 
-def sendcolor(lights,color)
+def sendcolor(lights,color,brightness)
 {
-	if (brightnessLevel<1) {
-		brightnessLevel=1
-	}
-    else if (brightnessLevel>100) {
-		brightnessLevel=100
-	}
-
 	def colorPallet = [
     	"White": [ hue: 0, saturation: 0],
     	"Daylight":  [hue: 53, saturation: 91],
@@ -388,8 +441,25 @@ def sendcolor(lights,color)
 	]
 	def newcolor = colorPallet."${color}"
     if(newcolor.saturation == null) newcolor.saturation = 100
-    newcolor.level = brightnessLevel
-	lights*.setColor(newcolor)
+    newcolor.level = brightness
+    lights.each {
+        if (color == "White" && it.hasCommand("coolWhiteOn"))
+        {
+            it.coolWhiteOn()
+        } 
+        else if (color == "Soft White" && it.hasCommand("softWhiteOn"))
+        {
+            it.softWhiteOn()
+        }
+        else if (color == "Warm White" && it.hasCommand("warmWhiteOn"))
+        {
+            it.warmWhiteOn()
+        }
+        else
+        {
+            it.setColor(newcolor)
+        }
+    }
     log.debug "Setting Color = ${color} for: ${lights}"
 
 }
