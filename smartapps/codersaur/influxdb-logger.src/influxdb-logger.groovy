@@ -175,8 +175,8 @@ def updated() {
     state.path = "/write?db=${state.databaseName}"
     state.headers = [:] 
     state.headers.put("HOST", "${state.databaseHost}:${state.databasePort}")
-    //state.headers.put("Content-Type", "application/x-www-form-urlencoded")
-    state.headers.put("Content-Type", "text/plain charset=utf-8")
+    state.headers.put("Content-Type", "application/x-www-form-urlencoded")
+    //state.headers.put("Content-Type", "text/plain charset=utf-8")
     if (state.databaseUser && state.databasePass) {
         state.headers.put("Authorization", encodeCredentialsBasic(state.databaseUser, state.databasePass))
     }
@@ -771,7 +771,7 @@ private escapeStringForInfluxDB(str) {
         str = str.replaceAll(",", "\\\\,") // Escape commas.
         str = str.replaceAll("=", "\\\\=") // Escape equal signs.
         str = str.replaceAll("\"", "\\\\\"") // Escape double quotes.
-        //str = str.replaceAll("'", "_")  // Replace apostrophes with underscores.
+        str = str.replaceAll('\u2019', '\'')  // Replace ’  with '.
     }
     else {
         str = 'null'
