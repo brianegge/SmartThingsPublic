@@ -219,7 +219,7 @@ private timeWindowStop() {
        if (start > new Date()) {
            start = new Date()
        }
-       result = timeTodayAfter(timeWindowStart(), ending, location.timeZone)
+       result = timeTodayAfter(start, ending, location.timeZone)
     }
     log.trace "timeWindowStop = ${result}"
     result
@@ -446,14 +446,17 @@ def sendcolor(lights,color,brightness)
         if (color == "White" && it.hasCommand("coolWhiteOn"))
         {
             it.coolWhiteOn()
+            it.setLevel(brightness)
         } 
         else if (color == "Soft White" && it.hasCommand("softWhiteOn"))
         {
             it.softWhiteOn()
+            it.setLevel(brightness)
         }
         else if (color == "Warm White" && it.hasCommand("warmWhiteOn"))
         {
             it.warmWhiteOn()
+            it.setLevel(brightness)
         }
         else
         {
