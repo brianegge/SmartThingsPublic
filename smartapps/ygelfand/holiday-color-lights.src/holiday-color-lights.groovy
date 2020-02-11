@@ -230,14 +230,15 @@ def closestWithoutGO(buffer=0) {
     def target = today.getTime()
     def last = null
     def diff = null
-     holidayTimestamps().any { k, v ->
+    holidayTimestamps().any { k, v ->
         if (k > target) {
             last = v
-            diff = k
+            diff = k - target
             return true
         }
         return false
     }
+    log.trace "closestWithoutGO last = ${last}, diff = ${diff / 86400000}, maxdays=${maxdays}"
     if ((maxdays == -1) || ( diff < ( maxdays  * 86400000) ))
     	return last
     else
