@@ -270,7 +270,7 @@ def handleModeEvent(evt) {
  *  Builds data to send to InfluxDB.
  *   - Escapes and quotes string values.
  *   - Calculates logical binary values where string values can be 
- *     represented as binary values (e.g. contact: closed = 1, open = 0)
+ *     represented as binary values (e.g. contact: closed = True, open = False)
  * 
  *  Useful references: 
  *   - http://docs.smartthings.com/en/latest/capabilities-reference.html
@@ -301,7 +301,7 @@ def handleEvent(evt) {
     
     def data = "${measurement},deviceId=${deviceId},deviceName=${deviceName},groupId=${groupId},groupName=${groupName},hubId=${hubId},hubName=${hubName},locationId=${locationId},locationName=${locationName}"
     
-    // Unit tag and fields depend on the event type:
+     // Unit tag and fields depend on the event type:
     //  Most string-valued attributes can be translated to a binary value too.
     if ('acceleration' == evt.name) { // acceleration: Calculate a binary value (active = 1, inactive = 0)
         unit = 'acceleration'
