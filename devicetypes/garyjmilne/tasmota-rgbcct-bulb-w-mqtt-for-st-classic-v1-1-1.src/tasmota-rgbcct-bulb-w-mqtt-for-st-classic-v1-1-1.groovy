@@ -18,6 +18,7 @@ metadata {
         capability "Switch Level"
 		capability "Color Control"
 		capability "Color Temperature"
+		capability "Color Mode"
 		capability "Refresh"
         capability "Configuration"
 
@@ -398,12 +399,9 @@ def off() {
 //Enables the warmwhite tile and sets the bulb to color temp 2000
 def warmWhiteOn() {
 	log("Action", "Turn on warmWhite", 0)
-    if ( isSystemIdle() == true ){
-        configureDisplay("warmWhite")
-        int kelvin = settings.warm_white
-        callTasmota("CT", kelvinToMireds(2000))
-        if (checkResponse() == false) configureDisplay("all") 
-       }
+    configureDisplay("warmWhite")
+    int kelvin = settings.warm_white
+    callTasmota("CT", kelvinToMireds(2000))
 }
 
 //Enables the softwhite tile and sets the bulb to color temp 2700
@@ -813,6 +811,7 @@ def poll(){
 //Start of main program section where most of the work gets done. There are 3 functions callTasmota, parse and checkResponse
 //This function places a call to the Tasmota device using HTTP via a hubCommand. A successful call will result in an HTTP response which will go to the parse() function
 //Method is either IP or MQTT. We force using IP mode for reading status when the device handler is otherwise in MQTT mode.
+//See https://github.com/arendst/Tasmota/wiki/commands for list of valid commands
 def callTasmota(action, receivedvalue){
 	def value = receivedvalue.toString()
     log ("callTasmota", "Sending command: ${action} ${value}", 0)
@@ -942,6 +941,7 @@ def parsedevice(response){
                     events += createEvent(name: "switch", value: "On", displayed:true, isStateChange: true)
                     events += createEvent(name: "color", value: desiredColor, displayed:true)
                     events += createEvent(name: "level", value: 100, displayed:true, isStateChange: true)
+                    events += createEvent(name: "colorMode", value: "color", displayed:false)
                     message(desiredColor)
                     }
                 else
@@ -952,7 +952,7 @@ def parsedevice(response){
                 
             case ["DIMMER"]:
                 log("parsedevice", "DIMMER: ${tasdimmer}", 1)
-                if (lastcommandvalue.toLong() == tasdimmer.toLong()){
+                if (tasdimmer && lastcommandvalue.toLong() == tasdimmer.toLong()){
                 	log ("parsedevice", "Dimmer applied successfully", 0)
                     events += createEvent(name: "commandflag", value: "Complete", displayed:false)
                     events += createEvent(name: "level", value: lastcommandvalue, displayed:true)
@@ -969,7 +969,7 @@ def parsedevice(response){
                     events += createEvent(name: "colorTempValue", value: kelvin, displayed:true)
                     events += createEvent(name: "colorTemperatureControl", value: kelvin, displayed:false)
                     events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                    
+                    events += createEvent(name: "colorMode", value: "colorTemperature", displayed:false)
                     //With Tasmota, when you adjust the color temperature the color changes and the first six digits are always zero.
                     def currentcolor = tascolor
                     //Update the Smartthings color value to match the bulb.
