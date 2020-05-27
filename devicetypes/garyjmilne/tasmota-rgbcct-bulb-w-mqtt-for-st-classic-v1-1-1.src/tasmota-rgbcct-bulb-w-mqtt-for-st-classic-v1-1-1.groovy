@@ -952,11 +952,13 @@ def parsedevice(response){
                 
             case ["DIMMER"]:
                 log("parsedevice", "DIMMER: ${tasdimmer}", 1)
-                if (tasdimmer && lastcommandvalue.toLong() == tasdimmer.toLong()){
-                	log ("parsedevice", "Dimmer applied successfully", 0)
-                    events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                    events += createEvent(name: "level", value: lastcommandvalue, displayed:true)
-                    events += createEvent(name: "switch", value: "On", displayed:true)
+                if (tasdimmer) {
+                    if (lastcommandvalue && lastcommandvalue != "null" && lastcommandvalue.toLong() == tasdimmer.toLong()) {
+                	  log ("parsedevice", "Dimmer applied successfully", 0)
+                      events += createEvent(name: "commandflag", value: "Complete", displayed:false)
+                      events += createEvent(name: "level", value: lastcommandvalue, displayed:true)
+                      events += createEvent(name: "switch", value: tasdimmer.toLong() > 0 ? "On" : "Off", displayed:true)
+                    }
                 } 
                 else log("parsedevice","Dimmer state failed to apply", -1)
             	break
