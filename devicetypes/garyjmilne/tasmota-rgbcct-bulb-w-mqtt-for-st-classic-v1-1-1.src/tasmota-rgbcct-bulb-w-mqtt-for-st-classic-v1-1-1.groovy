@@ -397,27 +397,27 @@ def off() {
 }
 
 //Enables the warmwhite tile and sets the bulb to color temp 2000
-def warmWhiteOn() {
+def warmWhiteOn(level=100) {
 	log("Action", "Turn on warmWhite", 0)
     configureDisplay("warmWhite")
     int kelvin = settings.warm_white
-    callTasmota("CT", kelvinToMireds(2000))
+    callTasmota("CT", kelvinToMireds(2000), ["DIMMER":level] )
 }
 
 //Enables the softwhite tile and sets the bulb to color temp 2700
-def softWhiteOn() {
+def softWhiteOn(level=100) {
 	log("Action", "Turn on softWhite", 0) 
     configureDisplay("softWhite")
     int kelvin = settings.soft_white
-    callTasmota("CT", kelvinToMireds(kelvin))
+    callTasmota("CT", kelvinToMireds(kelvin), ["DIMMER":level])
 }
 
 //Enables the coolwhite tile and sets the bulb to color temp 4000
-def coolWhiteOn() {
+def coolWhiteOn(level=100) {
 	log("Action", "Turn on coolWhite", 0)
     configureDisplay("coolWhite")
     int kelvin = settings.cool_white
-    callTasmota("CT", kelvinToMireds(kelvin))
+    callTasmota("CT", kelvinToMireds(kelvin), ["DIMMER":level])
 }
 
 //Saves the currently active color to device attribute SavedColor1 and changes the state of the Color1 tile
@@ -812,9 +812,9 @@ def poll(){
 //This function places a call to the Tasmota device using HTTP via a hubCommand. A successful call will result in an HTTP response which will go to the parse() function
 //Method is either IP or MQTT. We force using IP mode for reading status when the device handler is otherwise in MQTT mode.
 //See https://github.com/arendst/Tasmota/wiki/commands for list of valid commands
-def callTasmota(action, receivedvalue){
+def callTasmota(action, receivedvalue, args=[:]){
 	def value = receivedvalue.toString()
-    log ("callTasmota", "Sending command: ${action} ${value}", 0)
+    log ("callTasmota", "Sending command: ${action} ${value}, plus ${args}", 0)
     
     //Update the status to show that we are sending info to the device
 	sendEvent(name:"status", value: "send")
@@ -834,10 +834,16 @@ def callTasmota(action, receivedvalue){
     		value = value?.replace("#","%23") 
     		value = value?.replace(";","%3B") 
         	path = "/cm?user=${username}&password=${password}&cmnd=${action}%20${value}"
+            args.each { entry ->
+              path += "%3B${entry.key}%20${entry.value}"
+            }
         	break
 
         case ["MQTT"]: 
         	path = "/cm?user=${username}&password=${password}&cmnd=publish%20cmnd/${settings.mqtt_topic}/${action}%20${value}"
+            args.each { entry ->
+              path += "%3B${entry.key}%20${entry.value}"
+            }
         	break;
         }
     log ("callTasmota", "Path: ${path}", 1)
@@ -956,7 +962,7 @@ def parsedevice(response){
                     if (lastcommandvalue && lastcommandvalue != "null" && lastcommandvalue.toLong() == tasdimmer.toLong()) {
                 	  log ("parsedevice", "Dimmer applied successfully", 0)
                       events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                      events += createEvent(name: "level", value: lastcommandvalue, displayed:true)
+                      events += createEvent(name: "level", value: tasdimmer.toLong(), displayed:true)
                       events += createEvent(name: "switch", value: tasdimmer.toLong() > 0 ? "On" : "Off", displayed:true)
                     }
                 } 
@@ -965,7 +971,7 @@ def parsedevice(response){
                 
              case ["CT"]:
             	log("parsedevice","ColorTemperature (CT): ${tasct} mireds - ColorTemperature (CT): ${kelvin} Kelvin", 1)
-                if (lastcommandvalue.toInteger() == tasct.toInteger()){
+                //if (lastcommandvalue.toInteger() == tasct.toInteger()){
                 	log ("parsedevice","Color temp applied successfully", 0)
                     events += createEvent(name: "switch", value: taspower.toLowerCase())
                     events += createEvent(name: "colorTempValue", value: kelvin, displayed:true)
@@ -978,8 +984,8 @@ def parsedevice(response){
                     log("parsedevice","Color Temp: Update color to: ${currentcolor}", 1) 
                     events += createEvent(name: "color", value: currentcolor, displayed:true)
                     message(currentColor)
-                }
-                else log("parsedevice","Color Temp state failed to apply", -1)
+                //}
+                //else log("parsedevice","Color Temp state failed to apply", -1)
             	break
 			
             case ["FADE"]:
