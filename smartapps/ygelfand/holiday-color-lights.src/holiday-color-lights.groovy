@@ -109,8 +109,10 @@ def allHolidayList() {
     [name: "Presidents Day", day: '02/20', colors: ["Red", "White", "Blue" ] ],
     [name: "St. Patrick's Day", day: '03/17', colors: ["Green", "Orange"] ],
     [name: "Easter", day: '04/12', colors: [ 'Pink', 'Turquoise', 'Aqua' ] ],
-    [name: "Mothers Day", day: '05/10', colors: ['Red', 'Pink'] ],
+    [name: "Mothers Day", day: '05/10', colors: ['Pink'] ],
+    [name: "Brian's Birthday", day: '05/23', colors: ["Blue", "Green" ] ],
     [name: "Memorial Day", day: '05/29', colors: ["Red", "White", "Blue" ] ],
+    [name: "Kyle's Birthday", day: '06/11', colors: ["White", "Red", "Orange", "White", "Red", "Yellow" ] ],
     [name: "Fathers Day", day: '06/18', , colors: ["Blue", "Navy Blue"] ],
     [name: "Independence Day", day: '07/04', colors: ["Red", "White", "Blue" ] ],
     [name: "Labor Day", day: '09/04', colors: ["Red", "White", "Blue" ] ],
@@ -224,25 +226,24 @@ private timeWindowStop() {
     log.trace "timeWindowStop = ${result}"
     result
 }
-def closestWithoutGO(buffer=0) {
+def closestWithoutGO(linger=0) {
     def today = new Date()
-    today = today - buffer
-    def target = today.getTime()
+    def end_date = null
+    def begin_date = null
     def last = null
-    def diff = null
     holidayTimestamps().any { k, v ->
-        if (k > target) {
+        begin_date = k - maxdays * 86400000
+        end_date = k + linger * 86400000
+        log.trace "Checking Holiday ${v} between ${begin_date} and ${end_date}"
+        if (today.getTime() >= begin_date && today.getTime() < end_date ) {
+            log.trace "k=${k}, v=${v}, begin_time=${begin_date} < today=${today.getTime()} < end_date=${end_date}, "
+            log.trace "Holiday ${v} matches"
             last = v
-            diff = k - target
-            return true
         }
         return false
     }
-    log.trace "closestWithoutGO last = ${last}, diff = ${diff / 86400000}, maxdays=${maxdays}"
-    if ((maxdays == -1) || ( diff < ( maxdays  * 86400000) ))
-    	return last
-    else
-    	return null
+    log.trace "closestWithoutGO last = ${last}, begin_date = ${begin_date}, end_date=${end_date}"
+    return last
 }
 def closest() {
     def today = new Date()
@@ -405,7 +406,7 @@ def changeHandler(evt) {
             else {
             	log.debug "Colors: ${colors}"
            		for(def i=0;i<numberon;i++) {
-                	sendcolor(onLights[i],colors[(state.colorOffset + i) % numcolors],brightness)
+                	sendcolor(onLights[i], colors[(state.colorOffset + i) % numcolors], brightness)
                 }
             }
             state.colorOffset = state.colorOffset + 1
@@ -415,10 +416,10 @@ def changeHandler(evt) {
     log.debug "Running change handler again in ${settings.cycletime} minutes"
 }
 
-def sendcolor(lights,color,brightness)
+def sendcolor(lights,color,brightness_)
 {
 	def colorPallet = [
-    	"White": [ hue: 0, saturation: 0],
+    	"White": [ hue: 0, saturation: 0, brightness: 33],
     	"Daylight":  [hue: 53, saturation: 91],
     	"Soft White": [hue: 23, saturation: 56],
     	"Warm White": [hue: 20, saturation: 80],
@@ -440,27 +441,24 @@ def sendcolor(lights,color,brightness)
     	"Red": [hue: 0, saturation: null ],
     	"Brick Red": [hue: 4, saturation: null ],
 	]
-	def newcolor = colorPallet."${color}"
-    if(newcolor.saturation == null) newcolor.saturation = 100
-    newcolor.level = brightness
     lights.each {
         if (color == "White" && it.hasCommand("coolWhiteOn"))
         {
-            it.coolWhiteOn()
-            it.setLevel(brightness)
+            it.coolWhiteOn(brightness_)
         } 
         else if (color == "Soft White" && it.hasCommand("softWhiteOn"))
         {
-            it.softWhiteOn()
-            it.setLevel(brightness)
+            it.softWhiteOn(brightness_)
         }
         else if (color == "Warm White" && it.hasCommand("warmWhiteOn"))
         {
-            it.warmWhiteOn()
-            it.setLevel(brightness)
+            it.warmWhiteOn(brightness_)
         }
         else
         {
+	        def newcolor = colorPallet."${color}"
+            if (newcolor.saturation == null) newcolor.saturation = 100
+            if (newcolor.brightness == null) newcolor.level = brightness_
             it.setColor(newcolor)
         }
     }
