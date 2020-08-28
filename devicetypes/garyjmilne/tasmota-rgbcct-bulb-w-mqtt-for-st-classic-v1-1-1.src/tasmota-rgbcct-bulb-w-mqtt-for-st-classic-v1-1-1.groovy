@@ -401,7 +401,8 @@ def warmWhiteOn(level=100) {
 	log("Action", "Turn on warmWhite", 0)
     configureDisplay("warmWhite")
     int kelvin = settings.warm_white
-    callTasmota("CT", kelvinToMireds(2000), ["DIMMER":level] )
+    callTasmota("CT", 500)
+    callTasmota("DIMMER",level)
 }
 
 //Enables the softwhite tile and sets the bulb to color temp 2700
@@ -409,7 +410,8 @@ def softWhiteOn(level=100) {
 	log("Action", "Turn on softWhite", 0) 
     configureDisplay("softWhite")
     int kelvin = settings.soft_white
-    callTasmota("CT", kelvinToMireds(kelvin), ["DIMMER":level])
+    callTasmota("CT", kelvinToMireds(kelvin))
+    callTasmota("DIMMER",level)
 }
 
 //Enables the coolwhite tile and sets the bulb to color temp 4000
@@ -417,7 +419,8 @@ def coolWhiteOn(level=100) {
 	log("Action", "Turn on coolWhite", 0)
     configureDisplay("coolWhite")
     int kelvin = settings.cool_white
-    callTasmota("CT", kelvinToMireds(kelvin), ["DIMMER":level])
+    callTasmota("CT", kelvinToMireds(kelvin))
+    callTasmota("DIMMER",level)
 }
 
 //Saves the currently active color to device attribute SavedColor1 and changes the state of the Color1 tile
@@ -812,9 +815,9 @@ def poll(){
 //This function places a call to the Tasmota device using HTTP via a hubCommand. A successful call will result in an HTTP response which will go to the parse() function
 //Method is either IP or MQTT. We force using IP mode for reading status when the device handler is otherwise in MQTT mode.
 //See https://github.com/arendst/Tasmota/wiki/commands for list of valid commands
-def callTasmota(action, receivedvalue, args=[:]){
+def callTasmota(action, receivedvalue){
 	def value = receivedvalue.toString()
-    log ("callTasmota", "Sending command: ${action} ${value}, plus ${args}", 0)
+    log ("callTasmota", "Sending command: ${action} ${value}", 0)
     
     //Update the status to show that we are sending info to the device
 	sendEvent(name:"status", value: "send")
@@ -834,16 +837,16 @@ def callTasmota(action, receivedvalue, args=[:]){
     		value = value?.replace("#","%23") 
     		value = value?.replace(";","%3B") 
         	path = "/cm?user=${username}&password=${password}&cmnd=${action}%20${value}"
-            args.each { entry ->
-              path += "%3B${entry.key}%20${entry.value}"
-            }
+            //args.each { entry ->
+            //  path += "%3B${entry.key}%20${entry.value}"
+            //}
         	break
 
         case ["MQTT"]: 
         	path = "/cm?user=${username}&password=${password}&cmnd=publish%20cmnd/${settings.mqtt_topic}/${action}%20${value}"
-            args.each { entry ->
-              path += "%3B${entry.key}%20${entry.value}"
-            }
+            //args.each { entry ->
+            //  path += "%3B${entry.key}%20${entry.value}"
+            //}
         	break;
         }
     log ("callTasmota", "Path: ${path}", 1)
@@ -913,28 +916,28 @@ def parsedevice(response){
         def tascolor = msg?.json.Color
         def tasfade = msg?.json.Fade
         def tasbacklog = msg?.json.WARNING
-        log ("parsedevice", "Tasmota settings: Power-Fade-Backlog: ${taspower}-${tasfade}-${tasbacklog}", 2)
-        if (msg.json.Wifi){
-            def wifi = msg.json.Wifi
-            log ("parsedevice", "Wifi: ${wifi}", 3)
-            def RSSI = wifi.RSSI
-            log ("parsedevice", "RSSI: ${RSSI}", 3)
-            events += setWifi(RSSI)
-            log ("parsedevice", "Tasmota settings: Power-Dimmer-CT-Color-Wifi: ${taspower}-${tasdimmer}-${tasct}-${tascolor}-${RSSI}", 2)
+        if (lastcommand == "STATE") {
+          events += syncSuccess()
+          events += createEvent(name: "commandflag", value: "Complete", displayed:false)
+          events += createEvent(name: "sync", value: "enabled", displayed:false)
         }
-        switch(lastcommand.toUpperCase()) { 
-   			case ["POWER"]:
-        		log("parsedevice","POWER: ${taspower}", 1)
-                if (lastcommandvalue.toUpperCase() == taspower)
-                	log ("parsedevice","Power state applied successfully", 0) 
-                else
-                    log("parsedevice","Power state failed to apply", -1)
-                events += createEvent(name: "commandflag", value: "Complete", displayed:false)
+
+        msg.json.each { key, value ->
+          log("parsedevice"," map ${key}: ${value} ", 1)
+          switch(key) { 
+            case "Wifi":
+              def wifi = msg.json.Wifi
+              log ("parsedevice", "Wifi: ${wifi}", 3)
+              def RSSI = wifi.RSSI
+              log ("parsedevice", "RSSI: ${RSSI}", 3)
+              events += setWifi(RSSI)
+              break;
+   			case "POWER":
                 //We got the response we were looking for so we can actually change the state of the switch in the UI.
-                events += createEvent(name: "switch", value: taspower.toLowerCase(), displayed:true)
+                events += createEvent(name: "switch", value: value.toLowerCase(), displayed:true)
             	break
                 
-            case ["COLOR"]:	
+            case "COLOR":	
                 //When you adjust the Color Tasmota automatically changes the dimmer to be 100. This applies only in color mode. 
                 //You can use COLOR2 to avoid this but then Tasmota changes the actual color value to complicate things.
             	def newColor = lastcommandvalue.toUpperCase()
@@ -943,10 +946,7 @@ def parsedevice(response){
                 log("parsedevice","Device COLOR: ${tascolor}  Desired COLOR is: ${desiredColor}", 0)
                 if ( desiredColor == tascolor){
                     log ("parsedevice","Color applied successfully", 0)
-                    events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                    events += createEvent(name: "switch", value: "On", displayed:true, isStateChange: true)
                     events += createEvent(name: "color", value: desiredColor, displayed:true)
-                    events += createEvent(name: "level", value: 100, displayed:true, isStateChange: true)
                     events += createEvent(name: "colorMode", value: "color", displayed:false)
                     message(desiredColor)
                     }
@@ -956,27 +956,16 @@ def parsedevice(response){
                 	}
                 break
                 
-            case ["DIMMER"]:
-                log("parsedevice", "DIMMER: ${tasdimmer}", 1)
-                if (tasdimmer) {
-                    if (lastcommandvalue && lastcommandvalue != "null" && lastcommandvalue.toLong() == tasdimmer.toLong()) {
-                	  log ("parsedevice", "Dimmer applied successfully", 0)
-                      events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                      events += createEvent(name: "level", value: tasdimmer.toLong(), displayed:true)
-                      events += createEvent(name: "switch", value: tasdimmer.toLong() > 0 ? "On" : "Off", displayed:true)
-                    }
-                } 
-                else log("parsedevice","Dimmer state failed to apply", -1)
+            case "Dimmer":
+                log("parsedevice", "DIMMER: ${value}", 1)
+                events += createEvent(name: "level", value: value.toLong(), displayed:true)
             	break
                 
-             case ["CT"]:
+             case "CT":
             	log("parsedevice","ColorTemperature (CT): ${tasct} mireds - ColorTemperature (CT): ${kelvin} Kelvin", 1)
                 //if (lastcommandvalue.toInteger() == tasct.toInteger()){
-                	log ("parsedevice","Color temp applied successfully", 0)
-                    events += createEvent(name: "switch", value: taspower.toLowerCase())
                     events += createEvent(name: "colorTempValue", value: kelvin, displayed:true)
                     events += createEvent(name: "colorTemperatureControl", value: kelvin, displayed:false)
-                    events += createEvent(name: "commandflag", value: "Complete", displayed:false)
                     events += createEvent(name: "colorMode", value: "colorTemperature", displayed:false)
                     //With Tasmota, when you adjust the color temperature the color changes and the first six digits are always zero.
                     def currentcolor = tascolor
@@ -988,17 +977,12 @@ def parsedevice(response){
                 //else log("parsedevice","Color Temp state failed to apply", -1)
             	break
 			
-            case ["FADE"]:
+            case "Fade":
                 log("parsedevice", "In parsedevice: FADE is: ${tasfade}", 2)
-                if (lastcommandvalue.toUpperCase() == "${tasfade.toUpperCase()}"){
-                	log ("parsedevice","Fade applied successfully: ${tasfade.toLowerCase()}", 0)
-                    events += createEvent(name:"fade", value: "${tasfade.toLowerCase()}", displayed:true, isStateChange: true)
-                    events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                } 
-                else log("parsedevice","Fade state failed to apply", -1)
+                events += createEvent(name:"fade", value: "${value.toLowerCase()}", displayed:true, isStateChange: true)
             	break
                 
-            case ["SPEED"]:  //This refers to the speed of the fade. Larger numbers are longer.
+            case "SPEED":  //This refers to the speed of the fade. Larger numbers are longer.
                 log("parsedevice", "In parsedevice: SPEED is: ${tasspeed}", 0)
                 if (lastcommandvalue.toUpperCase() == "${tasspeed.toUpperCase()}"){
                 	log ("parsedevice","Fade speed applied successfully: ${tasspeed.toLowerCase()}", 0)
@@ -1008,7 +992,7 @@ def parsedevice(response){
                 else log("parsedevice","Fade speed failed to apply", -1)
             	break
                 
-            case ["BACKLOG"]:
+            case "BACKLOG":
             	//This is the typical response to a backlog command: [WARNING:Enable weblog 2 if response expected]
                 //But the bulb may be in weblog 4 and get a different response. So we just test to see if a response is present and assume it worked.
                 log("parsedevice", "In parsedevice: BACKLOG command: ${tasbacklog}", 2)
@@ -1019,7 +1003,7 @@ def parsedevice(response){
                 else log("parsedevice","Backlog command failed to apply", -1)
             	break
                 
-            case ["STATE"]:
+            case "STATE":
                 //Synchronise the UI to the values we get from the device
                 log ("parsedevice","Setting device handler values", 1)
                 events += createEvent(name: "switch", value: taspower.toLowerCase())
@@ -1028,15 +1012,16 @@ def parsedevice(response){
                 events += createEvent(name: "fade", value: tasfade, displayed:false)
                 log ("parsedevice","Setting Color temperature (CT):" + miredsToKelvin(tasct), 1)
                 events += createEvent(name: "colorTempValue", value: miredsToKelvin(tasct), displayed:false)
-               	events += createEvent(name: "commandflag", value: "Complete", displayed:false)
-                events += createEvent(name: "sync", value: "enabled", displayed:false)
-                events += syncSuccess()
+               	//events += createEvent(name: "commandflag", value: "Complete", displayed:false)
+                //events += createEvent(name: "sync", value: "enabled", displayed:false)
             	break
-        	}
-        }
+        	} //end switch
+        } // end each
+        events += createEvent(name: "commandflag", value: "Complete", displayed:false)
+     }
    	log ("parsedevice","Exiting", 2)
     return events
-   }
+}
 
 //When the device handler is in MQTT mode the JSON response will be routed to here via parse()
 //We do not get a full Status response with MQTT as we do with a single device, just {} or {:}
